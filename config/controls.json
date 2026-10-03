@@ -1,0 +1,237 @@
+{
+  "Version": 2,
+  "UnityInputEnabled": true,
+  "AppliedToGame": true,
+  "LinkTriggerAndBoost": true,
+  "ConfirmExit": true,
+  "ExitBinding": {
+    "Kind": "keyboardKey",
+    "Device": "",
+    "Control": "Escape",
+    "Invert": false,
+    "Deadzone": 0,
+    "Sensitivity": 1
+  },
+  "Actions": [
+    {
+      "Name": "Horizontal",
+      "ValueType": "analog",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Left",
+          "Invert": true,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Right",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputAxis",
+          "Device": "any",
+          "Control": "LeftX",
+          "Invert": false,
+          "Deadzone": 0.15,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Vertical",
+      "ValueType": "analog",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Up",
+          "Invert": true,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Down",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputAxis",
+          "Device": "any",
+          "Control": "LeftY",
+          "Invert": true,
+          "Deadzone": 0.15,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Accelerate / Confirm",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Z",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "A",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputAxis",
+          "Device": "any",
+          "Control": "RightTrigger",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Start",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "Return",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "Start",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Brake / Cancel",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "X",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "B",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Coin",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "D5",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "Back",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Service",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "F1",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "LeftShoulder",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Test",
+      "ValueType": "digital",
+      "Bindings": [
+        {
+          "Kind": "keyboardKey",
+          "Device": "",
+          "Control": "F2",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        },
+        {
+          "Kind": "xinputButton",
+          "Device": "any",
+          "Control": "RightShoulder",
+          "Invert": false,
+          "Deadzone": 0,
+          "Sensitivity": 1
+        }
+      ]
+    },
+    {
+      "Name": "Boost",
+      "ValueType": "digital",
+      "Bindings": []
+    },
+    {
+      "Name": "View",
+      "ValueType": "digital",
+      "Bindings": []
+    },
+    {
+      "Name": "Throttle",
+      "ValueType": "analog",
+      "Bindings": []
+    },
+    {
+      "Name": "Right Trigger",
+      "ValueType": "analog",
+      "Bindings": []
+    }
+  ]
+}

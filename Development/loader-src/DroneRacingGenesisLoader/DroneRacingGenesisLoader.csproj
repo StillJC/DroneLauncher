@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>DroneLauncher</AssemblyName>
+    <Product>Drone Launcher</Product>
+    <Title>Drone Launcher</Title>
+    <Description>Portable launcher for Drone Racing Genesis</Description>
+    <Version>1.1.0</Version>
+    <ApplicationIcon>Assets\DroneLauncher.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\DroneLauncher.png" LogicalName="DroneLauncher.Logo" />
+    <EmbeddedResource Include="Assets\DroneLauncher.ico" LogicalName="DroneLauncher.Icon" />
+    <ProjectReference Include="..\DroneRacingGenesis.Plugin\DroneRacingGenesis.Plugin.csproj" />
+  </ItemGroup>
+</Project>

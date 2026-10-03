@@ -1,0 +1,8 @@
+{
+  "RumbleEnabled": false,
+  "XInputSlot": 0,
+  "Strength": 40,
+  "TcpEnabled": false,
+  "Host": "127.0.0.1",
+  "Port": 8000
+}
