@@ -11,11 +11,11 @@ static uintptr_t mappedImage(HANDLE process,const wchar_t* name) {
   uintptr_t next=(uintptr_t)region.BaseAddress+region.RegionSize;if(next<=address)break;address=next;
  }return 0;
 }
-static uintptr_t module(DWORD pid,const wchar_t* name) {
- for(int retry=0;retry<20;retry++) { HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,pid);if(snapshot==INVALID_HANDLE_VALUE){Sleep(20);continue;}
+static uintptr_t module(DWORD pid,const wchar_t* name,int retries=20) {
+ for(int retry=0;retry<retries;retry++) { HANDLE snapshot=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE,pid);if(snapshot==INVALID_HANDLE_VALUE){if(retry+1<retries)Sleep(20);continue;}
   MODULEENTRY32W e{};e.dwSize=sizeof(e);uintptr_t result=0;
   for(BOOL more=Module32FirstW(snapshot,&e);more;more=Module32NextW(snapshot,&e))if(!_wcsicmp(e.szModule,name)){result=(uintptr_t)e.modBaseAddr;break;}
-  CloseHandle(snapshot);if(result)return result;Sleep(20);
+  CloseHandle(snapshot);if(result)return result;if(retry+1<retries)Sleep(20);
  }return 0;
 }
 static bool call(HANDLE process,uintptr_t fn,void* arg,DWORD& result) {
@@ -28,7 +28,7 @@ int wmain(int argc,wchar_t** argv) {
  auto load=GetProcAddress(GetModuleHandleW(L"kernel32.dll"),"LoadLibraryW");HMODULE owner=nullptr;
  GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,(LPCWSTR)load,&owner);
  wchar_t ownerPath[MAX_PATH];GetModuleFileNameW(owner,ownerPath,MAX_PATH);const wchar_t* name=wcsrchr(ownerPath,L'\\');
- auto remoteOwner=module(pid,name?name+1:ownerPath);
+ auto remoteOwner=module(pid,name?name+1:ownerPath,1);
  if(!remoteOwner) {
   auto ntdll=GetModuleHandleW(L"ntdll.dll");auto exitThread=GetProcAddress(ntdll,"RtlExitUserThread");auto remoteNtdll=mappedImage(p,L"ntdll.dll");DWORD initResult=0;
   if(!remoteNtdll||!exitThread||!call(p,remoteNtdll+(uintptr_t)exitThread-(uintptr_t)ntdll,nullptr,initResult)){CloseHandle(p);return 5;}

@@ -1,71 +1,483 @@
-# Acceptance record
+# Acceptance
 
-## Final handoff build and smoke — 2026-10-02, America/New_York
+Drone Launcher 1.0 has been validated against the supported Drone Racing Genesis installation on real Windows systems.
 
-**Clean Release build: PASS. Bounded smoke: PASS.** Final binary identities are in [COMPONENT_HASHES.json](COMPONENT_HASHES.json). Two independent staged-source snapshots contained no original game payload and no prior bin/obj outputs. Both published the .NET 8 x64 launcher, compiled x86/x64 native components and passed the generated-fixture source regressions. The second assembled runtime-pack notices as well. The owner subsequently selected MIT; the license and corrected notices were included in the payload. A third fresh-source build after the MIT/package update also passed. All five binaries were byte-identical to the smoke-tested artifacts; no additional gameplay retest was needed for the documentation/license-only change.
+The purpose of this document is to record what has actually been exercised and what remains outside the current acceptance scope.
 
-Verified architecture headers: DroneLauncher x64, IO DLL/bootstrap x86, Unity DLL/bootstrap x64. Product metadata is Drone Launcher 1.1.0; EXE name DroneLauncher.exe. Managed OriginalFilename remains DroneLauncher.dll (the bundled managed assembly). Embedded logo/icon were present and main UI was visible during the smoke test.
+## Build and packaging
 
-The newly built five components replaced only the launcher components in the private Prototype runtime, with previous copies saved locally. Original game/Shell files were not replaced. Existing working controls/display/output preferences were preserved.
+The project builds successfully from source using the documented .NET and Visual C++ toolchain.
 
-### Bounded real-runtime run
+The release build produces:
 
-Loader 12744; original Shell 18824; first Unity child 5496; operator-relaunched Unity 18008. Evidence IDs are historical labels, not configuration values.
+```text
+DroneLauncher.exe                         x64
+DroneRacingGenesis.IO.dll                x86
+DroneRacingGenesis.IOBootstrap.exe       x86
+DroneRacingGenesis.Unity.dll             x64
+DroneRacingGenesis.UnityBootstrap.exe    x64
+```
 
-| Required check | Result / evidence |
-|---|---|
-| Launcher -> Shell, checksum, IO | PASS; native bootstrap, IOReady=1, computed /k, original Shell |
-| Original verification | PASS; original log completed verification at 20:40:51 local |
-| Title/attract and compatibility | PASS; original GAME_MSG_ATTRACT_START at 20:41:16, eight redirects active, mapped input |
-| Start and Quick Race | PASS after a normal test Coin input; original Quick Race (Solo), course/drone flow, race Started at 20:43:48 |
-| Steering | PASS; native local values reached +1/-1 and returned to 0 during gameplay |
-| Vertical | PASS; Dive -1 / Climb +1 and release to 0 during gameplay |
-| Shared Trigger/Boost | PASS; original BOOST_ACTIVATED at 20:44:16.039 and DEACTIVATED at 20:44:16.771 |
-| TEST -> original operator | PASS; first game exited normally into state 34 |
-| Operator EXIT -> fresh child | PASS; same Shell created Unity 18008; native compatibility active; attract at 20:45:09 |
-| Recent optional settings | PASS for initialization; standalone, DISPLAY2 windowed 1280x720/Ultra; output observer initialized; absent loopback TCP receiver remained nonblocking |
-| Normal close | PASS; launcher requested TEST, then original window close; Unity 18008 exit 0 at 20:45:31; Shell exit 0 at 20:45:32 |
-| No forced termination/orphans | PASS; shutdown log has no timeout termination; owned processes absent afterward |
+The launcher is published as a self-contained .NET 8 application.
 
-Native first-child status after race inputs: Active=true, Mapped=true, Failures=0, Fallbacks=0, mode 3, quality 5. This short run intentionally did not complete another full race or inject crashes. Earlier full-race acceptance is summarized below.
+Users do not need a separate .NET installation.
 
-The initial automation readiness deadline (150 seconds) expired while original verification/startup was still progressing. The existing session completed successfully; it was observed to title and the bounded test continued without modifying verification or restarting Shell. The first Start attempt had zero credits; a normal Coin input was then used. These harness/session conditions are recorded rather than hidden as clean first-attempt automation.
+The built runtime contains launcher-owned files only. Original game content is not included.
 
-Raw local evidence is intentionally not published: loader/native logs for those IDs, original Updates/GameStateMachine logs dated 261003 (original logs use UTC), and acceptance directories for Launch/Start/race-input/operator/Close. No personal desktop screenshots or game payload are tracked.
+Original Shell and game binaries remain unchanged on disk.
 
-### Original-file integrity
+## Supported game build
 
-**Final post-smoke audit: PASS, 94/94 original CRC entries and all eleven protected-file comparisons.** No protected source/runtime file mismatches were found. Local report: `artifacts/final-runtime-integrity.json` (ignored; contains private installation paths). That tool recomputes all 94 original manifest entries with the original seeded CRC table and compares eleven protected files with a separate user-supplied source installation. It never edits either runtime.
+Known reference Shell SHA256:
 
-Reproduce against your own source/runtime copies:
+```text
+59BF7C7676A4AAEC584B4FAF81CDBAF36A6F9B267E69BC0D01250989053AF82B
+```
+
+Known reference GameAssembly SHA256:
+
+```text
+491F7C3E3AB392F78AEA8B3B9775B65AAD63ACDE2AE4E2FC4D04FDFE716FB652
+```
+
+The supported target is the known original game build.
+
+Whole-file hashes identify the reference build, while native compatibility additionally relies on narrow signature/build checks around required runtime hooks and patches.
+
+## Original-file integrity
+
+Drone Launcher does not rewrite the original Shell or Unity game executables.
+
+Compatibility is implemented through:
+
+- architecture-matched bootstrap helpers
+- targeted API hooks
+- guarded in-memory byte patches
+- narrow path redirection
+- local input translation
+- local output observation
+- process lifecycle management
+
+Original CRC/update files remain untouched.
+
+Runtime auditing has verified original manifest integrity and protected-file identity against an untouched source installation.
+
+The included audit tool can be used against user-owned source/runtime copies:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\AuditRuntime.ps1 -Root '<working runtime>' -OriginalRoot '<untouched content root>' -Output '<local report.json>'
 ```
 
-## Earlier feature acceptance retained as evidence
+The audit tool reads and compares files only.
 
-- Completed Quick Race under Shell 15352 / Unity 17044: start 19:27:49, finish 19:31:26, Game Over 19:32:09, return attract 19:32:16 local. Three TEST/operator/EXIT cycles initialized every new child. This earlier build is not represented as the final handoff EXE.
-- Original Input Test: X 0/1604/3703; Y 8/1755/3497; full endpoints and center. Original calibration preserved. Trigger, Secondary, Coin, Service and Test showed OFF/ON/release; Start is decoded but not separately labeled.
-- Physical Xbox controls confirmed by user; XInput 0/WinMM 0 duplicate interfaces disappeared together. Separate generic Switch Pro clone on joystick 1 reached normalized -1..1, mapped face-button actions and neutral on release. Latest single-page physical capture and tuning review remains incomplete.
-- Single-page editor's actual double-click keyboard capture: Left/Right, neutral with both, neutral on release; cancel preserved previous assignment; closing unsaved left controls.json identical. Alias/custom-action preservation also passes source regression.
-- Original Sound Settings music 100 -> 5 -> 100 persisted across operator relaunches. Exit Cancel, Don't ask again, restart/immediate exit and prompt re-enable were exercised; physical Exit prompt and every gameplay context remain incomplete.
-- Original Output Test physical rumble ON/OFF confirmed by user. Real output RGB/billboard/vibration levels mapped to TCP. Receiver absence, malformed incoming bytes and reconnect were tested. Rumble reconnect/fatal-process zero remain unverified.
-- Secondary-drive runtime root with spaces (137 characters) reached title/native initialization and normal exit; missing monitor fell back to Primary. Three transient input fallbacks were seen there, with no native failures. Arbitrary long/Unicode paths are not claimed.
+## Startup and Shell compatibility
 
-### Display matrix
+The original Shell starts successfully through Drone Launcher using the required working directory and startup handoff.
 
-| Request | Observed |
-|---|---|
-| Non-primary Windowed 1280x720, Very Low | mode 3, quality 0 |
-| Non-primary Borderless 1920x1080, Low | mode 1, quality 1 |
-| Non-primary Exclusive 1280x720, Medium | mode 1 at desktop 2560x1080; quality 2; exclusive failed |
-| Primary Exclusive 1920x1080, High | mode 1, quality 3; exclusive failed |
-| Primary Windowed 1280x720, Very High | mode 3, quality 4 |
-| Non-primary Windowed 1280x720, Ultra | mode 3, quality 5 |
+Verified behavior includes:
 
-All six actual quality names were tested. Monitor choice survived full restarts and three operator cycles. CLI-only quality was not reliable; original RootScene overrides startup settings, so guarded optional wrappers apply the final selection. Exclusive is not offered. Actual OS DPI transitions were not tested; 100/125/150% renders were only layout simulations.
+- correct Shell startup
+- x86 IO compatibility initialization
+- original cabinet handshake
+- original operator states
+- Unity child creation
+- repeated Unity child relaunches under the same Shell
 
-## Acceptance limits
+Several original startup waits that are unnecessary in this environment are bypassed through exact guarded in-memory patches.
 
-No two-peer LAN gameplay. No deliberate fatal Unity/Shell test. No new physical hardware claims from the final smoke. No generic force feedback. No universal cabinet-output backend. These remain explicit TODOs in HANDOFF.md and FEATURE_STATUS.md; the closeout does not broaden feature development.
+Verified startup optimizations include:
+
+- long original game-verification wait
+- two-second Shell startup timer
+- one-second Shell state delay
+- five-second pre-launch timer
+- unused pre-launch checksum calculation
+
+The original network initialization delay is intentionally preserved.
+
+Original cabinet/input readiness logic is also intentionally preserved.
+
+No original Shell executable is modified on disk.
+
+## Unity compatibility
+
+The original Unity game starts successfully through the x64 compatibility bootstrap.
+
+Verified behavior includes:
+
+- suspended child creation
+- native compatibility initialization before main-thread resume
+- required path redirection
+- mapped cabinet input
+- original game startup
+- repeated fresh Unity child initialization
+
+The managed launcher no longer broadly rejects a modified `GameAssembly.dll` solely because its whole-file SHA differs.
+
+Native compatibility still requires the expected narrow signatures for the supported build.
+
+## Startup performance
+
+The compatibility layer substantially reduces original Shell startup delays.
+
+The remaining Unity startup time is primarily within the original game before `RootScene.Awake()` and is consistent with Unity asset loading/parsing.
+
+The original installation contains very large resource files, including multi-gigabyte asset data.
+
+Storage performance can therefore materially affect startup and scene loading.
+
+Internal SSD/NVMe storage is recommended.
+
+## Standalone gameplay
+
+Standalone gameplay has been exercised through the original Shell/game lifecycle.
+
+Verified sequence includes:
+
+- attract mode
+- coin input
+- start input
+- Quick Race
+- drone/course selection
+- race start
+- steering
+- Dive/Climb
+- Boost
+- race completion
+- Game Over
+- return to attract
+
+The game successfully returns to the normal cabinet lifecycle afterward.
+
+## Controls
+
+Keyboard controls have been exercised in the original operator menus and gameplay.
+
+Verified keyboard functions include:
+
+```text
+Steering Left / Right
+Dive
+Climb
+Start
+Trigger / Confirm / Boost
+Secondary
+Coin
+Service
+Test
+Exit
+```
+
+Physical Xbox controller input has been exercised.
+
+Verified XInput behavior includes:
+
+- steering axis
+- vertical axis
+- buttons
+- Trigger/Confirm
+- Boost
+- Start
+- Service/Test-related control use
+
+A separate generic Windows joystick has also been tested through WinMM.
+
+Verified generic joystick behavior includes:
+
+- normalized axis range
+- face-button mappings
+- neutral return on release
+
+Generic WinMM joystick IDs remain enumeration-based and can change between Windows/device configurations.
+
+## Control editor
+
+The control editor has been exercised for:
+
+- double-click capture
+- keyboard input
+- controller buttons
+- controller axes
+- two-button axis mapping
+- cancellation
+- opposite-direction neutral behavior
+- persistence
+- preservation of untouched/custom/hidden bindings
+
+The editor saves only the intended control changes.
+
+## Original operator system
+
+The original operator system remains active and usable.
+
+Verified behavior includes:
+
+- Service navigation
+- Test selection
+- original input test
+- original sound settings
+- original network settings
+- operator exit back to game
+- repeated operator/game cycles
+
+Audio, calibration, bookkeeping, coin configuration, and other cabinet settings remain owned by the original operator software.
+
+Drone Launcher does not replace these pages.
+
+## Exit handling
+
+The configured Exit function has been tested.
+
+Verified behavior includes:
+
+- keyboard/controller Exit binding
+- confirmation prompt
+- Cancel
+- Don't ask again
+- prompt re-enable
+- immediate shutdown of launcher-owned Shell/game processes
+
+Explicit Exit no longer waits through the older long graceful-shutdown path.
+
+This is intentional user-requested session termination behavior.
+
+## No-GUI mode
+
+Drone Launcher supports cabinet/front-end launch through:
+
+```text
+DroneLauncher.exe -nogui
+```
+
+and:
+
+```text
+DroneLauncher.exe --nogui
+```
+
+Verified no-GUI behavior includes:
+
+- no launcher window displayed
+- saved configuration loaded
+- runtime configuration generated
+- Shell launched normally
+- Unity launched normally
+- input broker remains active
+- output handling remains active
+- configured Exit binding works
+- session closes correctly
+
+No-GUI mode uses the Windows primary display.
+
+## Monitor placement
+
+Normal UI launches place the Shell and game on the Windows display containing the Drone Launcher window.
+
+Verified behavior includes:
+
+- primary-display launch
+- secondary-display launch
+- repeated launches
+- correct child placement
+
+No-GUI mode intentionally uses the Windows primary display.
+
+Drone Launcher 1.0 does not provide replacement graphics/quality controls.
+
+## Network and linked cabinets
+
+Standalone networking is verified.
+
+Real two-machine linked-cabinet operation has also been tested.
+
+A two-cabinet configuration was used:
+
+```text
+Cabinet 1
+  LinkPlay=1
+  CabinetID=1
+  NumCabinets=2
+
+Cabinet 2
+  LinkPlay=1
+  CabinetID=2
+  NumCabinets=2
+```
+
+The two test systems were on the same subnet.
+
+One system used Ethernet and the other used Wi-Fi.
+
+Verified linked behavior includes:
+
+- both machines could communicate on the LAN
+- both received the intended original network settings
+- link establishment completed
+- attract behavior synchronized after the link settled
+- both cabinets displayed multiplayer readiness
+
+The attract sequences were not always frame-identical during initial synchronization.
+
+That did not prevent successful linked multiplayer-ready state.
+
+A complete linked multiplayer race has not yet been exercised.
+
+## Outputs
+
+The original cabinet output stream has been observed successfully.
+
+Verified logical outputs include:
+
+```text
+vibration
+billboard
+controller_red
+controller_green
+controller_blue
+footwell_red
+footwell_green
+footwell_blue
+monitor_lower_red
+monitor_lower_green
+monitor_lower_blue
+```
+
+Values are binary states.
+
+Some decorative cabinet patterns remain diagnostic-only.
+
+## XInput rumble
+
+Physical XInput rumble has been verified.
+
+The original cabinet vibration state drives the selected XInput controller.
+
+Both XInput motors receive the same level because the original game provides one vibration state.
+
+Generic joystick force feedback is not implemented.
+
+## TCP output server
+
+The TCP output system has been exercised as a localhost server.
+
+Drone Launcher listens on:
+
+```text
+127.0.0.1:<configured port>
+```
+
+External software connects to Drone Launcher.
+
+The protocol is UTF-8 newline-delimited JSON.
+
+Example:
+
+```json
+{"version":1,"sequence":12,"time":"2026-10-03T16:00:00.0000000+00:00","output":"vibration","value":1}
+```
+
+Verified behavior includes:
+
+- client connection
+- current-state snapshot on connect
+- transition messages after connection
+- disconnect/reconnect
+- game continues without a client
+- no recurring one-second state refresh
+
+This is a Drone Launcher-specific protocol.
+
+Direct MAME Hooker or OutputHooker compatibility is not claimed.
+
+## Local output monitor
+
+The local HTTP output monitor has been exercised.
+
+Human-readable endpoint:
+
+```text
+http://127.0.0.1:8765/
+```
+
+JSON endpoint:
+
+```text
+http://127.0.0.1:8765/api
+```
+
+The monitor is localhost-only.
+
+## Secondary-drive and path testing
+
+The launcher has been exercised from a non-system drive and from paths containing spaces.
+
+Long-path testing within normal Windows path behavior has also succeeded.
+
+Original Shell limitations remain.
+
+The following are not claimed:
+
+- arbitrary Unicode path support
+- arbitrary extended-length Windows path support
+
+## Removable-storage observation
+
+A second linked-cabinet test system was run from USB storage.
+
+The link itself functioned correctly.
+
+One specific attract sequence showed graphics corruption on that machine only.
+
+Because the system was otherwise more powerful and the issue was isolated to one streamed sequence while running from removable storage, storage performance remains a plausible cause.
+
+No LAN or launcher defect was demonstrated by that observation.
+
+Internal SSD/NVMe storage is recommended for normal deployment.
+
+## Self-contained deployment
+
+The built runtime is self-contained.
+
+Verified deployment behavior includes:
+
+- launcher copied independently of the source tree
+- no Python requirement
+- no Frida requirement
+- no separate .NET installation requirement
+- x86/x64 native helpers included
+- original game content supplied separately
+- existing launcher configuration can be preserved during upgrades
+
+## Accepted 1.0 functionality
+
+The following functionality is accepted for Drone Launcher 1.0:
+
+```text
+Self-contained Windows launcher
+Original Shell startup
+Original game startup
+x86 cabinet IO compatibility
+x64 Unity compatibility
+Path redirection
+Keyboard controls
+Xbox controls
+Generic WinMM joystick controls
+Control configuration UI
+Control test UI
+Original operator menus
+Standalone gameplay
+Configured Exit handling
+No-GUI launch
+No-GUI Exit handling
+Normal UI monitor placement
+Linked-cabinet configuration
+Real two-PC link discovery
+Linked attract synchronization
+Multiplayer-ready state
+Original cabinet output observation
+XInput rumble
+Local TCP output server
+Local HTTP output monitor
+Repeated Shell/game lifecycle
+Startup-delay reduction
+```

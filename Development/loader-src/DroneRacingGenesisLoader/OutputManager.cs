@@ -44,7 +44,7 @@ internal sealed class OutputManager : IDisposable
     internal int ShellPid;
     internal OutputManager(Installation installation,LoaderLog log)
     {
-        this.log=log;string path=Path.Combine(installation.ConfigRoot,"outputs.json");
+        this.log=log;monitor=new OutputMonitorServer(RenderMonitorPage,RenderMonitorApi);string path=Path.Combine(installation.ConfigRoot,"outputs.json");
         try{config=File.Exists(path)?JsonSerializer.Deserialize<OutputConfiguration>(File.ReadAllText(path))??throw new InvalidDataException("Outputs configuration is empty."):new();config.Validate();}
         catch(Exception e)when(e is IOException or JsonException or InvalidDataException){config=new();log.Write("Optional outputs disabled: "+e.Message);}
         mapping=MemoryMappedFile.CreateNew(MappingName,4128);view=mapping.CreateViewAccessor();view.Write(0,1u);
@@ -56,7 +56,7 @@ internal sealed class OutputManager : IDisposable
     internal void SessionClosing(){sessionClosing=true;GameEnded();}
     private async Task Poll()
     {
-        uint sequence=0;int epoch=0;long nextSnapshot=0,nextMotorCheck=0;bool stale=false;
+        uint sequence=0;int epoch=0;long nextMotorCheck=0;bool stale=false;
         try
         {
             while(!stop.IsCancellationRequested)
@@ -78,7 +78,6 @@ internal sealed class OutputManager : IDisposable
                     }
                 }
                 if(fresh&&Environment.TickCount64>=nextMotorCheck){nextMotorCheck=Environment.TickCount64+100;SetMotor(vibration!=0?config.Strength*65535/100:0);}
-                if(Environment.TickCount64>=nextSnapshot){nextSnapshot=Environment.TickCount64+1000;SendSnapshot();}
                 await Task.Delay(10,stop.Token).ConfigureAwait(false);
             }
         }
@@ -118,23 +117,150 @@ internal sealed class OutputManager : IDisposable
     }
     private async Task Tcp()
     {
-        while(!stop.IsCancellationRequested)
+        var listener = new TcpListener(System.Net.IPAddress.Loopback,config.Port);
+
+        try
         {
-            try
+            listener.Start();
+            log.Write($"Output TCP listening on 127.0.0.1:{config.Port}.");
+
+            while(!stop.IsCancellationRequested)
             {
-                using var client=new TcpClient();using(var deadline=CancellationTokenSource.CreateLinkedTokenSource(stop.Token)){deadline.CancelAfter(1000);await client.ConnectAsync(config.Host,config.Port,deadline.Token).ConfigureAwait(false);}
-                client.NoDelay=true;log.Write($"Output TCP connected to {config.Host}:{config.Port}.");
-                // Drop queued historical pulses; every new receiver starts with current logical state.
-                lock(levelsLock){while(queue.Reader.TryRead(out _)){}SendSnapshot();}
-                using var stream=client.GetStream();
-                await foreach(var line in queue.Reader.ReadAllAsync(stop.Token).ConfigureAwait(false))
-                {using var deadline=CancellationTokenSource.CreateLinkedTokenSource(stop.Token);deadline.CancelAfter(1000);await stream.WriteAsync(Encoding.UTF8.GetBytes(line),deadline.Token).ConfigureAwait(false);}
-            }
+                try
+                {
+                    using TcpClient client =
+                        await listener.AcceptTcpClientAsync(stop.Token).ConfigureAwait(false);
+
+                    client.NoDelay=true;
+                    log.Write($"Output TCP client connected from {client.Client.RemoteEndPoint}.");
+
+                // A new client starts with current logical state rather than
+                // receiving stale queued transitions from before it connected.
+                    lock(levelsLock)
+                   {
+                        while(queue.Reader.TryRead(out _)){}
+                       SendSnapshot();
+                    }
+
+                   using NetworkStream stream=client.GetStream();
+
+                    while(!stop.IsCancellationRequested && client.Connected)
+                   {
+                       string line=await queue.Reader.ReadAsync(stop.Token).ConfigureAwait(false);
+                        byte[] data=Encoding.UTF8.GetBytes(line);
+
+                        await stream.WriteAsync(data,stop.Token).ConfigureAwait(false);
+                       await stream.FlushAsync(stop.Token).ConfigureAwait(false);
+                   }
+               }
+                catch(OperationCanceledException)
+                {
+                    break;
+                }
             catch(Exception e)
-            {if(!stop.IsCancellationRequested)log.Write("Output TCP unavailable; game continues. "+e.GetType().Name);}
-            if(stop.IsCancellationRequested)break;
-            try{await Task.Delay(2000,stop.Token).ConfigureAwait(false);}catch(OperationCanceledException){break;}
+                {
+                   if(!stop.IsCancellationRequested)
+                       log.Write("Output TCP client disconnected. "+e.GetType().Name);
+                }
+            }
         }
+        finally
+        {
+            listener.Stop();
+        }
+    }
+    private string RenderMonitorApi()
+    {
+    Dictionary<string,int> snapshot;
+
+    lock(levelsLock)
+        snapshot=levels.ToDictionary(x=>x.Key,x=>x.Value);
+
+    return JsonSerializer.Serialize(new
+    {
+        outputs=snapshot,
+        tcp=new
+        {
+            enabled=config.TcpEnabled,
+            host=config.Host,
+            port=config.Port
+        },
+        xinput=new
+        {
+            enabled=config.RumbleEnabled,
+            slot=config.XInputSlot,
+            strength=config.Strength,
+            result=lastRumbleResult
+        }
+    });
+    }
+    private string RenderMonitorPage()
+    {
+    List<KeyValuePair<string,int>> snapshot;
+
+    lock(levelsLock)
+        snapshot=levels.OrderBy(x=>x.Key).ToList();
+
+    var rows = string.Join(
+        "",
+        snapshot.Select(x =>
+            "<tr><td>" +
+            System.Net.WebUtility.HtmlEncode(x.Key) +
+            "</td><td id=\"out-" +
+            System.Net.WebUtility.HtmlEncode(x.Key) +
+            "\">" +
+            x.Value +
+            "</td></tr>"));
+
+    return $$"""
+    <!doctype html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>Drone Launcher Output Monitor</title>
+        <style>
+            body { font-family: Segoe UI, sans-serif; margin: 30px; background:#111; color:#eee; }
+            table { border-collapse:collapse; min-width:420px; }
+            th,td { padding:8px 14px; border-bottom:1px solid #444; text-align:left; }
+            th { color:#aaa; }
+            .on { font-weight:bold; }
+        </style>
+    </head>
+    <body>
+        <h1>Drone Launcher Output Monitor</h1>
+
+        <table>
+            <tr><th>Output</th><th>State</th></tr>
+            {{rows}}
+        </table>
+
+        <p>TCP enabled: {{config.TcpEnabled}}</p>
+        <p>TCP destination: {{System.Net.WebUtility.HtmlEncode(config.Host)}}:{{config.Port}}</p>
+        <p>XInput rumble enabled: {{config.RumbleEnabled}}</p>
+        <p>XInput slot: {{config.XInputSlot + 1}}</p>
+        <p>Rumble strength: {{config.Strength}}%</p>
+        <p>Last XInput result: {{lastRumbleResult}}</p>
+        <script>
+        async function refreshOutputs() {
+            try {
+                const response = await fetch('/api', { cache: 'no-store' });
+                const data = await response.json();
+
+                for (const [name, value] of Object.entries(data.outputs)) {
+                    const cell = document.getElementById('out-' + name);
+                    if (cell) cell.textContent = value;
+                }
+            } catch {
+                // retry on next poll
+            }
+        }
+
+        setInterval(refreshOutputs, 250);
+        refreshOutputs();
+        </script>
+    </body>
+    </html>
+    """;
     }
     private void SetMotor(int value)
     {
@@ -150,7 +276,8 @@ internal sealed class OutputManager : IDisposable
             lastRumbleResult=result;lastMotor=result==0?value:-1;
         }
     }
+    private readonly OutputMonitorServer monitor;
     [StructLayout(LayoutKind.Sequential)]private struct Vibration{public ushort Left,Right;}
     [DllImport("xinput1_4.dll")]private static extern uint XInputSetState(uint index,ref Vibration vibration);
-    public void Dispose(){stop.Cancel();SetMotor(0);try{Task.WhenAll(worker,tcp).GetAwaiter().GetResult();}finally{SetMotor(0);view.Dispose();mapping.Dispose();stop.Dispose();}}
+    public void Dispose(){stop.Cancel();SetMotor(0);try{Task.WhenAll(worker,tcp).GetAwaiter().GetResult();}finally{SetMotor(0);view.Dispose();mapping.Dispose();monitor.Dispose();stop.Dispose();}}
 }

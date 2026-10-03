@@ -1,4 +1,4 @@
-#include "common.h"
+﻿#include "common.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -13,10 +13,10 @@ static SRWLOCK pathLock=SRWLOCK_INIT;
 static std::atomic<unsigned long> samples{},fallbacks{},failures{},redirects{};
 static std::atomic<bool> installed{},mapped{};
 static bool inputEnabled;
-static bool graphicsEnabled;
-static int graphicsWidth,graphicsHeight,graphicsMode,graphicsQuality=-1;
-static const BYTE resolutionSignature[]={0xe8,0x38,0xd8,0xb8,0xff},qualitySignature[]={0xe8,0xab,0x83,0xbc,0xff};
-static std::atomic<int> actualWidth{},actualHeight{},actualMode{-1},actualQuality{-1};
+
+
+
+
 static void log(const char* format,...) { char b[2048];int n=sprintf_s(b,"%llu ",GetTickCount64());va_list a;va_start(a,format);vsnprintf_s(b+n,sizeof(b)-n,_TRUNCATE,format,a);va_end(a);strcat_s(b,"\r\n");DWORD done;AcquireSRWLockExclusive(&logLock);WriteFile(logfile,b,(DWORD)strlen(b),&done,nullptr);ReleaseSRWLockExclusive(&logLock); }
 using Call=uintptr_t(*)(void*,void*,void*,void*);
 struct Site { DWORD rva;BYTE bytes[5];bool second;const wchar_t* from;const wchar_t* relative;Call original;void* replacement;uint32_t handle;unsigned count; };
@@ -68,24 +68,7 @@ static void afterInput() {
   previous=next;mapped=true;++samples;
  }__except(EXCEPTION_EXECUTE_HANDLER){++failures;mapped=false;log("ERROR input adapter exception; native fallback");}
 }
-static void observeGraphics() {
- static DWORD last;DWORD now=GetTickCount();if(now-last<1000)return;last=now;
- using Get=int(*)(void*);
- int w=((Get)(game+0x9799f0))(nullptr),h=((Get)(game+0x9799a0))(nullptr),m=((Get)(game+0x979970))(nullptr),q=((Get)(game+0x9b4380))(nullptr);
- if(w!=actualWidth||h!=actualHeight||m!=actualMode||q!=actualQuality)log("display actual width=%d height=%d mode=%d quality=%d",w,h,m,q);
- actualWidth=w;actualHeight=h;actualMode=m;actualQuality=q;
-}
-static void update(void* array,void* method) { beforeInput();updateOriginal(array,method);afterInput();observeGraphics(); }
-static void resolution(int width,int height,bool fullscreen,int refresh,void* method) {
- using Get=int(*)(void*);
- log("Before RootScene override: width=%d height=%d mode=%d quality=%d",((Get)(game+0x9799f0))(nullptr),((Get)(game+0x9799a0))(nullptr),((Get)(game+0x979970))(nullptr),((Get)(game+0x9b4380))(nullptr));
- log("RootScene original resolution=%dx%d fullscreen=%d refresh=%d; requested=%dx%d mode=%d",width,height,fullscreen,refresh,graphicsWidth,graphicsHeight,graphicsMode);
- using Set=void(*)(int,int,int,int,void*);((Set)(game+0x979810))(graphicsWidth,graphicsHeight,graphicsMode,refresh,method);
-}
-static void quality(int level,bool expensive,void* method) {
- log("RootScene original quality=%d requested=%d",level,graphicsQuality);
- using Set=void(*)(int,bool,void*);((Set)(game+0x9b43f0))(graphicsQuality<0?level:graphicsQuality,expensive,method);
-}
+static void update(void* array,void* method) { beforeInput();updateOriginal(array,method);afterInput(); }
 static void jump(BYTE* destination,void* fn) { BYTE code[]={0xff,0x25,0,0,0,0};memcpy(destination,code,6);memcpy(destination+6,&fn,8); }
 static BYTE* allocateNear(BYTE* target) {
  SYSTEM_INFO info;GetSystemInfo(&info);uintptr_t aligned=(uintptr_t)target&~((uintptr_t)info.dwAllocationGranularity-1);
@@ -96,7 +79,7 @@ static BYTE* allocateNear(BYTE* target) {
 static bool patch(BYTE* target,const BYTE* data,SIZE_T count) { DWORD old,ignored;if(!VirtualProtect(target,count,PAGE_EXECUTE_READWRITE,&old))return false;memcpy(target,data,count);FlushInstructionCache(GetCurrentProcess(),target,count);VirtualProtect(target,count,old,&ignored);return true; }
 static DWORD WINAPI statusThread(void*) {
  auto path=logRoot+L"\\unity-"+std::to_wstring(GetCurrentProcessId())+L".json";
- for(;;){std::string s="{\"GamePid\":"+std::to_string(GetCurrentProcessId())+",\"Tick\":"+std::to_string(GetTickCount64())+",\"Active\":"+(installed?"true":"false")+",\"InputEnabled\":"+(inputEnabled?"true":"false")+",\"Mapped\":"+(mapped?"true":"false")+",\"Samples\":"+std::to_string(samples)+",\"Fallbacks\":"+std::to_string(fallbacks)+",\"Failures\":"+std::to_string(failures)+",\"Redirects\":"+std::to_string(redirects)+",\"Width\":"+std::to_string(actualWidth)+",\"Height\":"+std::to_string(actualHeight)+",\"DisplayMode\":"+std::to_string(actualMode)+",\"Quality\":"+std::to_string(actualQuality)+"}";writeAtomic(path,s);Sleep(1000);} }
+ for(;;){std::string s="{\"GamePid\":"+std::to_string(GetCurrentProcessId())+",\"Tick\":"+std::to_string(GetTickCount64())+",\"Active\":"+(installed?"true":"false")+",\"InputEnabled\":"+(inputEnabled?"true":"false")+",\"Mapped\":"+(mapped?"true":"false")+",\"Samples\":"+std::to_string(samples)+",\"Fallbacks\":"+std::to_string(fallbacks)+",\"Failures\":"+std::to_string(failures)+",\"Redirects\":"+std::to_string(redirects)+"}";writeAtomic(path,s);Sleep(1000);} }
 extern "C" __declspec(dllexport) DWORD WINAPI Initialize(void*) {
  root=env(L"DRG_CONTENT_ROOT");if(root.empty())return 0;logRoot=root+L"\\Launcher\\Logs\\Loader";
  auto file=logRoot+L"\\unity-"+std::to_wstring(GetCurrentProcessId())+L".log";
@@ -108,12 +91,6 @@ extern "C" __declspec(dllexport) DWORD WINAPI Initialize(void*) {
  const BYTE signature[]={0x40,0x57,0x48,0x81,0xec,0xf0,0,0,0,0x80,0x3d,0x34};
  for(auto& s:sites)if(memcmp(game+s.rva,s.bytes,5)){log("ERROR call-site signature RVA=%lx",s.rva);return 0;}
  if(memcmp(game+0xdc09e0,signature,sizeof(signature))){log("ERROR input signature");return 0;}
- graphicsEnabled=env(L"DRG_GRAPHICS")==L"1";
- if(graphicsEnabled){
-  auto number=[](const wchar_t* key,int& out){auto text=env(key);wchar_t* end=nullptr;long value=wcstol(text.c_str(),&end,10);if(text.empty()||*end||value< -1||value>16384)return false;out=(int)value;return true;};
-  if(!number(L"DRG_SCREEN_WIDTH",graphicsWidth)||!number(L"DRG_SCREEN_HEIGHT",graphicsHeight)||!number(L"DRG_SCREEN_MODE",graphicsMode)||!number(L"DRG_SCREEN_QUALITY",graphicsQuality)||graphicsWidth<640||graphicsHeight<480||(graphicsMode!=0&&graphicsMode!=1&&graphicsMode!=3)||graphicsQuality< -1||graphicsQuality>5){log("ERROR invalid optional graphics configuration; no hooks installed");return 0;}
-  if(memcmp(game+0xdec033,resolutionSignature,5)||memcmp(game+0xdec040,qualitySignature,5)){log("ERROR optional graphics call-site signature; no hooks installed");return 0;}
- }
  chars=(decltype(chars))GetProcAddress((HMODULE)game,"il2cpp_string_chars");length=(decltype(length))GetProcAddress((HMODULE)game,"il2cpp_string_length");newString=(decltype(newString))GetProcAddress((HMODULE)game,"il2cpp_string_new_utf16");retain=(decltype(retain))GetProcAddress((HMODULE)game,"il2cpp_gchandle_new");
  if(!chars||!length||!newString||!retain){log("ERROR required IL2CPP exports missing");return 0;}
  inputEnabled=env(L"DRG_UNITY_INPUT")==L"1";mapping=OpenFileMappingW(FILE_MAP_READ,FALSE,env(L"DRG_IO_MAPPING").c_str());if(mapping)shared=(const BYTE*)MapViewOfFile(mapping,FILE_MAP_READ,0,0,64);
@@ -122,17 +99,11 @@ extern "C" __declspec(dllexport) DWORD WINAPI Initialize(void*) {
  Call replacements[]={redirected<0>,redirected<1>,redirected<2>,redirected<3>,redirected<4>,redirected<5>,redirected<6>,redirected<7>};
  for(int i=0;i<8;i++){auto& s=sites[i];int32_t delta;memcpy(&delta,s.bytes+1,4);s.original=(Call)(game+s.rva+5+delta);jump(stubs+i*16,(void*)replacements[i]);}
  jump(stubs+128,(void*)update);memcpy(stubs+160,game+0xdc09e0,9);jump(stubs+169,game+0xdc09e9);updateOriginal=(decltype(updateOriginal))(stubs+160);
- if(graphicsEnabled){jump(stubs+208,(void*)resolution);jump(stubs+224,(void*)quality);}
+
  DWORD old;if(!VirtualProtect(stubs,4096,PAGE_EXECUTE_READ,&old)){VirtualFree(stubs,0,MEM_RELEASE);return 0;}FlushInstructionCache(GetCurrentProcess(),stubs,4096);
  int changed=0;for(int i=0;i<8;i++){BYTE callBytes[5]={0xe8};int32_t delta=(int32_t)((stubs+i*16)-(game+sites[i].rva+5));memcpy(callBytes+1,&delta,4);if(!patch(game+sites[i].rva,callBytes,5))break;changed++;}
  BYTE entry[9]={0xe9,0,0,0,0,0x90,0x90,0x90,0x90};int32_t delta=(int32_t)((stubs+128)-(game+0xdc09e5));memcpy(entry+1,&delta,4);
  if(changed!=8||(inputEnabled&&!patch(game+0xdc09e0,entry,9))){for(int i=0;i<changed;i++)patch(game+sites[i].rva,sites[i].bytes,5);log("ERROR installation rolled back");return 0;}
- if(graphicsEnabled){
-  bool okay=true;DWORD addresses[]={0xdec033,0xdec040};
-  for(int i=0;i<2;i++){BYTE call[5]={0xe8};int32_t relative=(int32_t)((stubs+208+i*16)-(game+addresses[i]+5));memcpy(call+1,&relative,4);if(!patch(game+addresses[i],call,5)){okay=false;break;}}
-  if(!okay){patch(game+0xdec033,resolutionSignature,5);patch(game+0xdec040,qualitySignature,5);patch(game+0xdc09e0,signature,9);for(auto& s:sites)patch(game+s.rva,s.bytes,5);log("ERROR optional graphics installation rolled back");return 0;}
-  log("Optional graphics: two signature-verified RootScene call sites installed; original assets unchanged");
- }
  installed=true;log("ACTIVE eight narrow paths; input=%d; no network array writes",inputEnabled);HANDLE thread=CreateThread(nullptr,0,statusThread,nullptr,0,nullptr);if(thread)CloseHandle(thread);return 1;
 }
 BOOL WINAPI DllMain(HINSTANCE instance,DWORD why,void*) { if(why==DLL_PROCESS_ATTACH)DisableThreadLibraryCalls(instance);return TRUE; }

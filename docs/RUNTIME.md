@@ -1,58 +1,452 @@
-# Drone Launcher
+# Drone Launcher Runtime
 
-Start `DroneLauncher.exe`, then **Launch Game**. Drone Launcher is a self-contained Windows x64 application. Python, Frida, a separate .NET installation, and the Development tree are not required to run this version.
+Drone Launcher is a self-contained Windows x64 launcher and native compatibility layer for **Drone Racing Genesis**.
 
-The loader starts the original Shell with its required handoff and working directory. Shell performs its original verification and starts Unity. Short-lived native bootstraps initialize cabinet IO and eight narrow Unity path redirects plus the local input adapter. Original game and Shell binaries and CRC/update manifests remain unchanged on disk.
+Start `DroneLauncher.exe`, configure controls if needed, then select **Launch Game**.
 
-## Controls and operator settings
+Python, Frida, a separate .NET installation, and the Development tree are not required at runtime.
 
-- **Configure Controls** shows all functions on one page, one row per function. Double-click a row (or press Enter) to immediately listen for a keyboard key, XInput button/axis, or Windows joystick button/axis. Capturing replaces only that function's assignments; untouched and hidden/custom bindings remain intact. For Steering or Vertical, move the axis Left or Up/Dive as prompted, or press the first direction key/button and then the opposite direction key/button. Cancel keeps the previous assignment. Deadzone, sensitivity, and Reverse directions are on the same page. Save applies next launch and retains the previous configuration beside controls.json.
-- Flight axes can use a real axis or **two direction buttons**. Left and Up/Dive are negative; Right and Down/Climb are positive. Opposite buttons cancel to neutral. Invert, deadzone and sensitivity remain configurable.
-- **Test Controls** uses the same sampler as the game. When opened from Configure Controls while no game is running, it previews the edited assignments. With a running game, it shows active settings and inputs also reach the cabinet. Device diagnostics can show a connected controller even before it has been assigned to game actions.
-- The original trigger combines **Confirm and Boost**. Secondary reaches the original cabinet button but does not mean Back in selection menus.
-- **Operator / Test Menu** sends cabinet TEST, waits for Unity to exit, and focuses the original menu. If already in the menu, it only focuses it.
-- **Audio Settings** explains how to select SOUND SETTINGS in the original operator menu.
-- In original menus, Service chooses and Test selects. Shipped keyboard defaults: F1 Service, F2 Test, Enter Start, Z Confirm/Boost, X Secondary, arrows directions, 5 Coin and Escape Exit. Existing custom or legacy bindings are retained when upgrading.
-- The original local race automatically sets acceleration to 1 and brake to 0. View currently invokes the original boost-related behavior; camera switching has not been established. Original selection Update consumes horizontal and Decide/Start, not Secondary or vertical menu navigation.
+The launcher starts the original Shell with the required handoff and working directory, initializes the x86 cabinet-IO compatibility layer, and then allows the original Shell to start the Unity game. The Unity child is initialized through a matching x64 compatibility bootstrap before its main thread resumes.
 
-Audio, calibration, coin settings and bookkeeping belong to the operator. Launch generation changes only established path fields and standalone network fields; it does not restore factory audio every time.
+Original Shell and game binaries remain unchanged on disk. Compatibility is implemented through architecture-matched helper processes, targeted hooks, guarded in-memory patches, narrow path redirection, and local input/output adapters.
 
-## Exit, network and optional outputs
+## Controls
 
-Double-click Exit Game / Launcher in Configure Controls to assign Exit to one keyboard key or controller button. A single press opens Exit / Cancel confirmation. Checking **Don't ask again** and choosing Exit persists immediate exit for future presses. Re-enable the prompt with **Confirm before Exit**. Exit uses the existing orderly shutdown sequence; force termination is a bounded failure fallback.
+**Configure Controls** shows all configurable functions on one page.
 
-Standalone is the default network mode. LAN uses the original cabinet-link settings: unique cabinet IDs, two to four cabinets. Launcher LAN values apply once; later operator edits are preserved. No Windows Firewall rules are changed. Real linked-cabinet gameplay requires a separate peer and remains unverified in this pass.
+Double-click a row, or press Enter while it is selected, to capture a keyboard key, XInput button/axis, or Windows joystick button/axis.
 
-Outputs are optional and disabled by default. XInput rumble follows original cabinet vibration events, with selectable controller and strength. Both motors receive the same level because the original output supplies one vibration state. Generic joystick force feedback is not implemented. TCP sends logical output states to a configured destination; receiver absence does not block the game.
+Capturing replaces only the selected function's assignments. Untouched, hidden, custom, and legacy bindings are preserved.
 
-TCP protocol: outbound UTF-8 newline-delimited JSON. Example:
+For Steering or Vertical:
 
-```json
-{"version":1,"sequence":12,"time":"2026-10-02T23:00:00.0000000+00:00","output":"vibration","value":1}
+- move a physical axis in the prompted direction
+- or press the first direction key/button and then the opposite direction key/button
+
+Cancel preserves the previous assignment.
+
+Deadzone, sensitivity, and direction reversal are configurable.
+
+Changes apply to the next game session. The previous control configuration is retained beside `controls.json`.
+
+Flight-style controls use:
+
+- Steering Left / Right
+- Vertical Up = Dive
+- Vertical Down = Climb
+
+A flight axis can also use two digital keys/buttons. Opposite directions cancel to neutral.
+
+The original trigger combines **Confirm and Boost**.
+
+Secondary reaches the original cabinet button but is not a proven Back action in the game's selection menus.
+
+Shipped keyboard defaults:
+
+```text
+Arrow Left / Right   Steering
+Arrow Up             Dive
+Arrow Down           Climb
+Enter                Start
+Z                    Trigger / Confirm / Boost
+X                    Secondary
+5                    Coin
+F1                   Service
+F2                   Test
+Escape               Exit
 ```
 
-Verified names: `vibration`, `billboard`, `controller_red`, `controller_green`, `controller_blue`, `footwell_red`, `footwell_green`, `footwell_blue`, `monitor_lower_red`, `monitor_lower_green`, `monitor_lower_blue`. Values are binary 0/1. These describe observed original output levels, not inferred colors or analog brightness. Unknown decorative patterns stay in diagnostics.
+Xbox mappings are also supplied.
 
-Changed states are sent immediately, with a one-second state refresh. Connections start with current states. The queue holds 64 lines, drops oldest entries under pressure, and uses one-second connect/write deadlines with a two-second reconnect delay. It is a state stream, not a guaranteed pulse-delivery protocol. Sequence numbers are session-local; reconnect can skip sequence numbers. Incoming receiver bytes have no command meaning. A lost native heartbeat clears output states and stops rumble.
+Generic joystick input is supported through Windows WinMM.
 
-**Display / Graphics** supports tested Borderless and Windowed modes, Windows monitor selection, supported resolutions, and the project's six quality presets: Very Low, Low, Medium, High, Very High and Ultra. Original game default is Very High. Exclusive requests fell back to borderless in this build and are not offered. A missing selected display falls back to primary with a warning. Preferences reside in `Launcher\Config\graphics.json`; original game assets are never edited to save them.
+## Test Controls
 
-## Installation and diagnostics
+**Test Controls** uses the same physical-input sampler as the game.
 
-Copy the complete Runtime directory. Direct layout and a `Sega` content subdirectory are detected from the loader EXE. Logs stay under `Launcher\Logs\Loader`; do not add arbitrary directories at Runtime root because the original Shell scanner can mistake them for games. Preserve `backup` and original install manifests.
+When opened while no game is running, it previews the currently edited control assignments.
 
-Shell uses legacy ANSI APIs and fixed-size buffers. Avoid a parent directory containing the word `shell`. Unicode and paths beyond legacy Windows limits are not supported claims. See the repository `HANDOFF.md` and `docs/FEATURE_STATUS.md` for tested cases and remaining checks.
+When opened during a running session, it shows the active configuration and the same physical inputs continue reaching the cabinet.
 
-`Launcher\Config\unity-portability.json` selects the native engine. `shell-compatibility.json`, `network.json`, and `controls.json` retain existing compatibility and user options. `Config\Original` holds initial masters; working ShellData and GameData remain live state. Historical `network-observation.json` is unused by this native runtime.
+Device diagnostics may show connected hardware even before it has been assigned to a game function.
 
-Useful diagnostics: `diagnostics.json`, `shell-lifecycle.json`, `loader-*.log`, `io-*.log`, `unity-*.json` and `unity-*.log`. Native bootstraps exit after initialization. Close the loader to request TEST, wait for operator mode, and close owned windows. Force termination is a logged fallback after orderly shutdown times out.
+## Original operator system
 
-## Build (development only)
+The original operator system remains responsible for:
 
-C#/.NET 8 WinForms keeps the small Windows UI and configuration code straightforward. Self-contained publication removes a separate .NET installation requirement. Native x86/x64 C++ modules use the static CRT and exact-build guards.
+- audio settings
+- calibration
+- coin settings
+- bookkeeping
+- network cabinet state
+- other original operator options
 
-Run `powershell -ExecutionPolicy Bypass -File .\build.ps1` from a fresh repository checkout. See `docs/BUILD.md` in the repository for prerequisites, outputs and clean-build results. The output contains launcher-owned files only; original game files must be supplied separately.
+In original menus:
 
-Close the runtime before replacing launcher binaries. Preserve existing Launcher/Config files when upgrading. `--preflight` validates presence and generates working configuration without launching Shell; it is not a full hash/CRC/runtime test. Build/hash validation also occurs on launch.
+- Service chooses an item
+- Test activates the selected item
 
-Production sources are under `Development/loader-src`. Historical research scripts, captures and proprietary runtime data are intentionally excluded from Git.
+The launcher does not replace the original operator UI.
+
+The original game automatically sets local-race acceleration and braking behavior as expected by the cabinet software.
+
+## Exit behavior
+
+Double-click the Exit function in Configure Controls to assign one keyboard key or controller button.
+
+A configured Exit press can show an Exit / Cancel confirmation.
+
+Selecting **Don't ask again** and choosing Exit stores immediate-exit behavior for later sessions.
+
+The confirmation prompt can be re-enabled with **Confirm before Exit**.
+
+During an active game session, Exit immediately terminates the launcher-owned Shell/game process trees rather than waiting through the old long graceful-shutdown path.
+
+The configured Exit binding also works in `-nogui` mode.
+
+## No-GUI / front-end launch
+
+For cabinet front-ends and automated startup:
+
+```text
+DroneLauncher.exe -nogui
+```
+
+`--nogui` is also accepted.
+
+No-GUI mode:
+
+- does not display the launcher UI
+- loads the same saved configuration
+- generates the normal runtime configuration
+- starts the original Shell/game
+- keeps input/output handling active
+- honors the configured Exit binding
+- exits after the cabinet session ends
+
+No-GUI mode uses the Windows primary display.
+
+This is the intended behavior for a dedicated cabinet where the front-end launches Drone Launcher directly.
+
+## Monitor behavior
+
+When launching from the normal UI, the Shell and Unity game are placed on the Windows monitor containing the launcher window.
+
+This allows a user to move Drone Launcher to the desired display before launching.
+
+No-GUI mode uses the Windows primary display.
+
+Drone Launcher does not currently provide replacement graphics, quality, fullscreen, or resolution controls.
+
+The game's normal Unity/Windows rendering behavior remains in use.
+
+## Startup compatibility and performance
+
+Several original Shell delays and verification stages are unnecessary when the game is launched through Drone Launcher.
+
+For the supported Shell build, the x86 compatibility module uses guarded in-memory patches to reduce startup time while leaving the original executable unchanged on disk.
+
+Current startup optimizations include:
+
+- bypassing the original long game-verification wait while continuing through Shell success cleanup
+- bypassing the original pre-launch timer delay
+- bypassing the original two-second Shell startup delay
+- bypassing the original one-second state-20 delay
+- skipping an unused pre-launch checksum calculation
+
+These are narrow, build-specific runtime patches.
+
+The original network initialization delay is intentionally retained.
+
+The original cabinet/input-readiness startup logic is also intentionally retained.
+
+The remaining Unity startup time is largely controlled by the original game itself.
+
+The installation contains multi-gigabyte Unity resource files, including a `resources.assets.resS` file over 3 GB, so storage performance can have a noticeable effect on startup and scene loading.
+
+An internal SSD/NVMe drive is recommended over a slow USB flash drive or mechanical hard disk when possible.
+
+## Network / linked cabinets
+
+Standalone is the default network mode.
+
+The launcher also supports the original linked-cabinet configuration.
+
+For two cabinets:
+
+```text
+Cabinet 1
+  Network mode: LAN / Linked Cabinets
+  Cabinet ID: 1
+  Number of cabinets: 2
+
+Cabinet 2
+  Network mode: LAN / Linked Cabinets
+  Cabinet ID: 2
+  Number of cabinets: 2
+```
+
+Each cabinet must use a unique ID.
+
+The configuration UI supports two to four cabinets.
+
+Drone Launcher writes only the original network fields used by the game:
+
+```text
+LinkPlay
+CabinetID
+NumCabinets
+```
+
+LAN values are applied once. Later original operator network changes are preserved rather than overwritten every launch.
+
+No Windows Firewall rules are created or modified.
+
+Two real PCs on the same local network have been successfully linked.
+
+Observed test result:
+
+- Cabinet 1 used ID 1
+- Cabinet 2 used ID 2
+- both used NumCabinets=2
+- both machines discovered the link
+- attract-mode behavior synchronized after the link settled
+- both systems displayed multiplayer readiness
+
+A complete linked multiplayer race has not yet been tested.
+
+The link may take a short period to settle after both cabinets start.
+
+The two test systems successfully linked with one machine on Ethernet and the other on Wi-Fi on the same subnet.
+
+## Outputs
+
+Optional outputs are configured through the launcher Outputs page.
+
+Supported output handling includes:
+
+- XInput controller rumble
+- vibration state
+- billboard state
+- controller red/green/blue
+- footwell red/green/blue
+- lower-monitor red/green/blue
+
+Verified logical names:
+
+```text
+vibration
+billboard
+controller_red
+controller_green
+controller_blue
+footwell_red
+footwell_green
+footwell_blue
+monitor_lower_red
+monitor_lower_green
+monitor_lower_blue
+```
+
+Values are binary `0` or `1`.
+
+These names represent observed original cabinet output levels. They do not imply analog brightness or additional inferred colors.
+
+Some decorative cabinet patterns remain diagnostic-only.
+
+## XInput rumble
+
+XInput rumble follows the original cabinet vibration output.
+
+A controller slot and rumble strength can be selected.
+
+Both XInput motors receive the same level because the original game exposes one vibration state.
+
+Generic joystick force feedback is not implemented.
+
+Rumble is cleared when the native output heartbeat is lost or the game session ends.
+
+## TCP output server
+
+Drone Launcher can expose output events through a local TCP server.
+
+The launcher listens on:
+
+```text
+127.0.0.1:<configured port>
+```
+
+External software connects to Drone Launcher as a TCP client.
+
+The protocol is UTF-8 newline-delimited JSON.
+
+Example:
+
+```json
+{"version":1,"sequence":12,"time":"2026-10-03T16:00:00.0000000+00:00","output":"vibration","value":1}
+```
+
+When a client connects, it receives one snapshot of the current output state.
+
+After that, only output transitions are sent.
+
+There is no recurring one-second refresh.
+
+The connection is local-only and does not expose the server to the LAN.
+
+This protocol is specific to Drone Launcher and should not be assumed to be directly compatible with MAME Hooker, OutputHooker, or other unrelated output systems.
+
+## Local output monitor
+
+A local HTTP monitor is available while the output system is active.
+
+Human-readable view:
+
+```text
+http://127.0.0.1:8765/
+```
+
+JSON API:
+
+```text
+http://127.0.0.1:8765/api
+```
+
+The monitor is bound to localhost only.
+
+## Installation layout
+
+Copy the complete built Runtime payload into a copy of the supported original game installation.
+
+Expected layout:
+
+```text
+Runtime/
+  DroneLauncher.exe
+  Launcher/
+    Config/
+    Logs/
+    Plugins/
+  Shell/
+  ShellData/
+  GameData/
+  DroneRacing/
+  backup/
+```
+
+Direct layout and a nested `Sega` content layout are detected from the launcher executable location.
+
+Do not add arbitrary directories at Runtime root. The original Shell scans that location and can mistake unrelated directories for games.
+
+Preserve the original `backup` directory and installation metadata.
+
+Preserve existing `Launcher\Config` when updating the launcher.
+
+## Configuration files
+
+Launcher-owned configuration is stored under:
+
+```text
+Launcher\Config\
+```
+
+Important files include:
+
+```text
+controls.json
+network.json
+outputs.json
+shell-compatibility.json
+unity-portability.json
+```
+
+`Config\Original` contains runtime-created backups used to preserve original configuration state.
+
+Working `ShellData` and `GameData` remain live original cabinet/game state.
+
+The old launcher graphics configuration is no longer used.
+
+Historical `network-observation.json` is not a production runtime requirement.
+
+## Diagnostics
+
+Useful runtime diagnostics include:
+
+```text
+Launcher\Logs\Loader\loader-*.log
+Launcher\Logs\Loader\io-*.log
+Launcher\Logs\Loader\unity-*.log
+diagnostics.json
+shell-lifecycle.json
+unity-*.json
+```
+
+The native bootstrap processes are short-lived and exit after initialization.
+
+The runtime compatibility modules remain active inside the Shell/game processes where required.
+
+## Supported build
+
+Known supported Shell SHA256:
+
+```text
+59BF7C7676A4AAEC584B4FAF81CDBAF36A6F9B267E69BC0D01250989053AF82B
+```
+
+Known supported GameAssembly SHA256:
+
+```text
+491F7C3E3AB392F78AEA8B3B9775B65AAD63ACDE2AE4E2FC4D04FDFE716FB652
+```
+
+The runtime uses additional narrow signature checks around native patch/hook locations.
+
+Modified game files are not broadly rejected solely because their whole-file hash differs where launcher-side validation has been relaxed, but the supported target remains the known original build and required native signatures must still match.
+
+Original game/Shell files are never rewritten by Drone Launcher.
+
+## Path limitations
+
+The original Shell uses legacy ANSI APIs and fixed-size buffers.
+
+Because of those original limitations:
+
+- arbitrary Unicode paths are not a supported claim
+- extended-length Windows paths are not a supported claim
+- unusual parent-directory names may still expose original Shell scanner behavior
+
+Avoid unnecessary complexity in the installation path.
+
+## Preflight
+
+Development and troubleshooting can use:
+
+```text
+DroneLauncher.exe --preflight
+```
+
+Preflight verifies required component presence and generates the normal working configuration without launching Shell.
+
+It is not a complete gameplay/runtime test.
+
+## Build development
+
+Production source is under:
+
+```text
+Development\loader-src\
+```
+
+Build from the repository root with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+See `docs/BUILD.md` for prerequisites, toolchain information, and clean-build verification.
+
+The generated runtime contains launcher-owned files only.
+
+Original game files must be supplied separately.
+
+Historical research scripts, proprietary runtime data, captures, local test installations, and build artifacts are intentionally excluded from Git.

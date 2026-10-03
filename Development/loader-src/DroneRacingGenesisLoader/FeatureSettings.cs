@@ -33,11 +33,26 @@ internal static class FeatureSettings
         var connected=PhysicalInputManager.ConnectedDevices();
         var slot=Choice(Enumerable.Range(0,4).Select(n=>"XInput Controller "+(n+1)+(connected.Contains("XInput "+n)?" - connected":" - disconnected")),config.XInputSlot);Row(table,"Rumble device",slot);
         var strength=new NumericUpDown{Minimum=0,Maximum=100,Value=Math.Clamp(config.Strength,0,100)};Row(table,"Strength (%)",strength);
-        var tcp=new CheckBox{Text="Enable TCP output",Checked=config.TcpEnabled};Row(table,"TCP",tcp);
-        var host=new TextBox{Text=config.Host};Row(table,"Destination host",host);
-        var port=new NumericUpDown{Minimum=1,Maximum=65535,Value=Math.Clamp(config.Port,1,65535)};Row(table,"Destination port",port);
-        Note(table,"Rumble follows original cabinet vibration. TCP sends verified vibration, billboard and RGB states. External hardware is optional. Changes apply next launch.");
-        var save=LauncherStyle.Button("Save",(_,_)=>{try{config.RumbleEnabled=rumble.Checked;config.XInputSlot=slot.SelectedIndex;config.Strength=(int)strength.Value;config.TcpEnabled=tcp.Checked;config.Host=host.Text.Trim();config.Port=(int)port.Value;config.Validate();Save(i,"outputs.json",config);form.Close();}catch(Exception e){MessageBox.Show(form,e.Message,"Cannot save outputs");}});Row(table,"",save);
+        var tcp=new CheckBox{Text="Enable TCP output server",Checked=config.TcpEnabled};Row(table,"TCP",tcp);
+        var port=new NumericUpDown{Minimum=1,Maximum=65535,Value=Math.Clamp(config.Port,1,65535)};Row(table,"Listen port",port);
+        Note(table,"Rumble follows original cabinet vibration. The TCP server listens on localhost and provides vibration, billboard and RGB output states to external software. Changes apply next launch.");
+        var buttons=new FlowLayoutPanel{FlowDirection=FlowDirection.RightToLeft,Dock=DockStyle.Fill,AutoSize=true};
+
+        var cancel=LauncherStyle.Button("Cancel",(_,_)=>form.Close());
+        cancel.AutoSize=true;
+        cancel.Dock=DockStyle.None;
+
+        var save=LauncherStyle.Button("Save",(_,_)=>{try{config.RumbleEnabled=rumble.Checked;config.XInputSlot=slot.SelectedIndex;config.Strength=(int)strength.Value;config.TcpEnabled=tcp.Checked;config.Host="127.0.0.1";config.Port=(int)port.Value;config.Validate();Save(i,"outputs.json",config);form.Close();}catch(Exception e){MessageBox.Show(form,e.Message,"Cannot save outputs");}});
+        save.AutoSize=true;
+        save.Dock=DockStyle.None;
+
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(save);
+
+        int actionRow=table.RowCount++;
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
+        table.Controls.Add(buttons,0,actionRow);
+        table.SetColumnSpan(buttons,2);
         form.ShowDialog(owner);
     }
     internal static void Network(Form owner,Installation i,bool running)
@@ -54,19 +69,6 @@ internal static class FeatureSettings
         Note(table,"Two-cabinet gameplay has not been verified here. Windows may request network access; Drone Launcher does not change Windows Firewall.",84);
         var save=LauncherStyle.Button("Save",(_,_)=>{try{if(id.Value>count.Value&&mode.SelectedIndex==1)throw new InvalidDataException("Cabinet ID must be within the cabinet count.");Save(i,"network.json",new NetworkConfiguration{Mode=mode.SelectedIndex==0?"Standalone":"LAN",CabinetID=(int)id.Value,NumCabinets=(int)count.Value,ApplyOnNextLaunch=mode.SelectedIndex==1});form.Close();}catch(Exception e){MessageBox.Show(form,e.Message,"Cannot save network settings");}});save.Enabled=!running;Row(table,running?"Close the game to change network settings.":"",save);
         form.ShowDialog(owner);
-    }
-    internal static void Display(Form owner,Installation i,bool running)
-    {
-        using var form=Dialog("Display / Graphics",out var table);var config=Load<GraphicsConfiguration>(i,"graphics.json");
-        var enabled=new CheckBox{Text="Use custom display settings",Checked=config.Enabled};Row(table,"Display settings",enabled);
-        var screens=Screen.AllScreens;var monitor=Choice(screens.Select(s=>$"{s.DeviceName.Replace("\\\\.\\","")} — {s.Bounds.Width}×{s.Bounds.Height}"+(s.Primary?" — Primary":"")),Math.Max(0,Array.FindIndex(screens,s=>s.DeviceName==config.Monitor)));Row(table,"Monitor",monitor);
-        var resolution=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList};Row(table,"Resolution",resolution);
-        void Fill(){resolution.Items.Clear();foreach(var m in DisplayManager.Modes(screens[monitor.SelectedIndex].DeviceName))resolution.Items.Add($"{m.Width} × {m.Height}");int n=resolution.Items.IndexOf($"{config.Width} × {config.Height}");resolution.SelectedIndex=n>=0?n:resolution.Items.Count-1;}
-        monitor.SelectedIndexChanged+=(_,_)=>Fill();Fill();
-        var mode=Choice(["Borderless","Windowed"],Array.IndexOf(new[]{"Borderless","Windowed"},config.Mode));Row(table,"Display mode",mode);
-        var quality=Choice(new[]{"Original game default"}.Concat(DisplayManager.QualityNames),config.Quality+1);Row(table,"Quality",quality);
-        Note(table,"Changes apply next launch. Missing monitors fall back to the primary display.");
-        var save=LauncherStyle.Button("Save",(_,_)=>{try{var parts=resolution.Text.Split('×');var value=new GraphicsConfiguration{Enabled=enabled.Checked,Monitor=screens[monitor.SelectedIndex].DeviceName,Width=int.Parse(parts[0].Trim()),Height=int.Parse(parts[1].Trim()),Mode=mode.Text,Quality=quality.SelectedIndex-1};value.Validate();Save(i,"graphics.json",value);form.Close();}catch(Exception e){MessageBox.Show(form,e.Message,"Cannot save display settings");}});Row(table,"",save);form.ShowDialog(owner);
     }
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,EntryPoint="GetPrivateProfileIntW")]private static extern uint GetPrivateProfileInt(string section,string key,int fallback,string file);
 }

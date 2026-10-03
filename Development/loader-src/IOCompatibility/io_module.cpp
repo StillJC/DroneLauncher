@@ -1,4 +1,4 @@
-#define WIN32_LEAN_AND_MEAN
+﻿#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <setupapi.h>
 #include <hidsdi.h>
@@ -11,7 +11,8 @@
 #include <cstddef>
 #include "../NativeUnity/common.h"
 
-// Only Shell's IAT is changed. No Shell state or original file is written.
+// The original Shell executable on disk is never modified.
+// Compatibility uses targeted IAT hooks plus guarded in-memory state/code patches for the supported Shell build.
 static BYTE* shell;
 static HANDLE logFile = INVALID_HANDLE_VALUE, mapping;
 static const BYTE* shared;
@@ -50,6 +51,7 @@ static decltype(&SetupDiEnumDeviceInterfaces) realEnum;
 static decltype(&SetupDiGetDeviceInterfaceDetailA) realDetail;
 static decltype(&SetupDiDestroyDeviceInfoList) realDestroy;
 static decltype(&CreateFileA) realCreate;
+static decltype(&GetPrivateProfileStringA) realProfileString;
 static decltype(&ReadFile) realRead;
 static decltype(&WriteFile) realWrite;
 static decltype(&CloseHandle) realClose;
@@ -78,8 +80,58 @@ static BOOL WINAPI getDetail(HDEVINFO set, PSP_DEVICE_INTERFACE_DATA data, PSP_D
     memcpy(detail->DevicePath, devicePath, sizeof(devicePath)); return TRUE;
 }
 static BOOL WINAPI destroySet(HDEVINFO set) { return set == deviceSet ? TRUE : realDestroy(set); }
+static DWORD WINAPI profileString(
+    LPCSTR section,
+    LPCSTR key,
+    LPCSTR defaultValue,
+    LPSTR returned,
+    DWORD size,
+    LPCSTR file)
+{
+    if (file && key && !_stricmp(key, "version"))
+    {
+        const char* value = nullptr;
+
+        if (!_stricmp(file, "c:\\diskimage.ini"))
+            value = "MJ2813308004";
+        else if (!_stricmp(file, "c:\\sega\\launcher\\launcher.ini"))
+            value = "DroneLauncher v1.0";
+        else if (!_stricmp(file, "c:\\sega\\shell\\game.ini"))
+            value = "221004";
+
+        if (value)
+        {
+            if (!returned || !size)
+                return 0;
+
+            strncpy_s(returned, size, value, _TRUNCATE);
+
+            log(
+                "system-info version override file=%s section=%s key=%s value=%s",
+                file,
+                section ? section : "",
+                key,
+                value);
+
+            return (DWORD)strlen(returned);
+        }
+    }
+
+    return realProfileString(
+        section,
+        key,
+        defaultValue,
+        returned,
+        size,
+        file);
+}
 static HANDLE WINAPI createFile(LPCSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disposition, DWORD flags, HANDLE templateFile) {
-    if (name && !strcmp(name, devicePath)) { log("board opened"); pendingReply = 0; return board; }
+    if (name && !strcmp(name, devicePath)) {
+        log("board opened");
+        pendingReply = 0;
+        return board;
+    }
+
     return realCreate(name, access, share, sa, disposition, flags, templateFile);
 }
 static BOOL WINAPI closeHandle(HANDLE handle) {
@@ -155,35 +207,27 @@ static bool patch(DWORD rva, void* replacement) {
     *reinterpret_cast<void**>(shell + rva) = replacement;
     VirtualProtect(shell + rva, sizeof(void*), before, &ignored); return true;
 }
+static bool patchBytes(DWORD rva, const BYTE* expected, const BYTE* replacement, SIZE_T size) {
+    BYTE* address = shell + rva;
+    if (memcmp(address, expected, size) != 0) return false;
+
+    DWORD before, ignored;
+    if (!VirtualProtect(address, size, PAGE_EXECUTE_READWRITE, &before)) return false;
+
+    memcpy(address, replacement, size);
+    FlushInstructionCache(GetCurrentProcess(), address, size);
+
+    VirtualProtect(address, size, before, &ignored);
+    return true;
+}
 // Only Shell's own CreateProcess import and its exact DroneRacing child are adapted.
-static std::wstring quoteArgument(const std::wstring& value) {
-    std::wstring result=L"\"";size_t slashes=0;
-    for(wchar_t c:value){if(c==L'\\'){slashes++;continue;}if(c==L'\"')result.append(slashes*2+1,L'\\');else result.append(slashes,L'\\');slashes=0;result+=c;}
-    result.append(slashes*2,L'\\');return result+L"\"";
-}
-static std::vector<std::wstring> arguments(const std::wstring& line) {
-    int count=0;auto parsed=CommandLineToArgvW((L"drg "+line).c_str(),&count);std::vector<std::wstring> result;
-    if(parsed){for(int i=1;i<count;i++)result.push_back(parsed[i]);LocalFree(parsed);}return result;
-}
-static std::string playerCommand(LPCSTR app,LPCSTR command) {
-    auto extra=env(L"DRG_PLAYER_ARGUMENTS");if(extra.empty())return command?command:"";
-    int size=MultiByteToWideChar(CP_ACP,0,command?command:"",-1,nullptr,0);std::wstring original(size,L'\0');MultiByteToWideChar(CP_ACP,0,command?command:"",-1,original.data(),size);original.resize(size-1);
-    auto before=arguments(original),after=arguments(extra);std::set<std::wstring> replace;
-    const std::set<std::wstring> allowed={L"-screen-width",L"-screen-height",L"-screen-fullscreen",L"-window-mode",L"-screen-quality",L"-monitor"};
-    if(after.size()%2){log("ERROR optional player arguments malformed; retaining original command");return command?command:"";}
-    for(size_t i=0;i<after.size();i+=2){if(!allowed.count(after[i])||!replace.insert(after[i]).second){log("ERROR optional player argument invalid; retaining original command");return command?command:"";}}
-    std::wstring merged=quoteArgument(contentRoot+L"\\DroneRacing\\DroneRacing.exe");
-    for(size_t i=0;i<before.size();i++){if(replace.count(before[i])){if(i+1<before.size())i++;continue;}if(i==0&&!_wcsicmp(before[i].c_str(),(contentRoot+L"\\DroneRacing\\DroneRacing.exe").c_str()))continue;merged+=L" "+quoteArgument(before[i]);}
-    for(auto& arg:after)merged+=L" "+quoteArgument(arg);
-    size=WideCharToMultiByte(CP_ACP,0,merged.c_str(),-1,nullptr,0,nullptr,nullptr);std::string result(size,'\0');WideCharToMultiByte(CP_ACP,0,merged.c_str(),-1,result.data(),size,nullptr,nullptr);result.resize(size-1);return result;
-}
 static BOOL WINAPI createProcess(LPCSTR app,LPSTR command,LPSECURITY_ATTRIBUTES psa,LPSECURITY_ATTRIBUTES tsa,BOOL inherit,DWORD flags,LPVOID environment,LPCSTR cwd,LPSTARTUPINFOA startup,LPPROCESS_INFORMATION child) {
     std::wstring expected=contentRoot+L"\\DroneRacing\\DroneRacing.exe";
     char actual[MAX_PATH]={};if(app)GetFullPathNameA(app,MAX_PATH,actual,nullptr);
     wchar_t wide[MAX_PATH]={};MultiByteToWideChar(CP_ACP,0,actual,-1,wide,MAX_PATH);
     if(!app||_wcsicmp(wide,expected.c_str()))return realProcess(app,command,psa,tsa,inherit,flags,environment,cwd,startup,child);
     if(childInitializationFailed){SetLastError(ERROR_DLL_INIT_FAILED);return FALSE;}
-    auto effective=playerCommand(app,command);if(!env(L"DRG_PLAYER_ARGUMENTS").empty())command=effective.data();
+
     if(!realProcess(app,command,psa,tsa,inherit,flags|CREATE_SUSPENDED,environment,cwd,startup,child))return FALSE;
     log("child suspended pid=%lu app=%s command=%s cwd=%s originalFlags=%lu",child->dwProcessId,app,command?command:"",cwd?cwd:"",flags);
     auto bootstrap=contentRoot+L"\\Launcher\\Plugins\\Unity\\DroneRacingGenesis.UnityBootstrap.exe";
@@ -210,7 +254,17 @@ static DWORD WINAPI observe(void*) {
     int lastState = -1, lastProtocol = -1;
     for (;;) {
         if(outputs)InterlockedExchange(&outputs->tick,(LONG)GetTickCount());
+
         int state = *reinterpret_cast<volatile int*>(shell + 0x1fa08c);
+
+        if (state == 15) {
+            auto verifySubstate = reinterpret_cast<volatile int*>(shell + 0x119f3e0);
+            if (*verifySubstate == 1) {
+                log("Skipping original game verification pass; continuing through Shell success cleanup.");
+                *verifySubstate = 3;
+            }
+        }
+
         int protocol = *reinterpret_cast<volatile int*>(shell + 0x11a5ea4);
         if (state != lastState || protocol != lastProtocol) {
             log("state=%d protocol=%d ioReady=%d protocolReady=%d reads=%ld writes=%ld", state, protocol,
@@ -235,9 +289,46 @@ extern "C" __declspec(dllexport) DWORD WINAPI Initialize(void*) {
     if (!mapping) return 0;
     shared = static_cast<const BYTE*>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, 64));
     if (!shared) return 0;
-    swprintf_s(path, L"%s\\Launcher\\Logs\\Loader\\io-%lu.log", root, GetCurrentProcessId());
+        swprintf_s(path, L"%s\\Launcher\\Logs\\Loader\\io-%lu.log", root, GetCurrentProcessId());
     logFile = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (logFile == INVALID_HANDLE_VALUE) return 0;
+
+    static const BYTE checksumCall[] = {0xE8, 0xB1, 0x49, 0x03, 0x00};
+    static const BYTE checksumNops[] = {0x90, 0x90, 0x90, 0x90, 0x90};
+
+    if (!patchBytes(0xEBDA, checksumCall, checksumNops, sizeof(checksumCall))) {
+        log("Game launch checksum bypass signature mismatch; leaving original checksum intact.");
+    } else {
+        log("Skipped original pre-launch game checksum.");
+    }
+
+    static const BYTE launchDelayJump[] = {0x0F, 0x84, 0xBA, 0x01, 0x00, 0x00};
+    static const BYTE launchDelayNops[] = {0x90, 0x90, 0x90, 0x90, 0x90, 0x90};
+
+    if (!patchBytes(0xEB33, launchDelayJump, launchDelayNops, sizeof(launchDelayJump))) {
+        log("Game launch delay bypass signature mismatch; leaving original delay intact.");
+    } else {
+        log("Skipped original pre-launch timer delay.");
+    }
+
+    static const BYTE startupDelayJump[] = {0x76, 0x1B};
+    static const BYTE startupDelayNops[] = {0x90, 0x90};
+
+    if (!patchBytes(0xE81E, startupDelayJump, startupDelayNops, sizeof(startupDelayJump))) {
+        log("Shell startup delay bypass signature mismatch; leaving original delay intact.");
+    } else {
+        log("Skipped original two-second Shell startup delay.");
+    }
+
+    static const BYTE state20TimerCall[] = {0xE8, 0x18, 0x83, 0x03, 0x00};
+    static const BYTE state20ImmediateReady[] = {0xB0, 0x01, 0x90, 0x90, 0x90};
+
+    if (!patchBytes(0x7A03, state20TimerCall, state20ImmediateReady, sizeof(state20TimerCall))) {
+        log("State 20 timer bypass signature mismatch; leaving original delay intact.");
+    } else {
+        log("Skipped original one-second state 20 delay.");
+    }
+
     auto outputName=env(L"DRG_OUTPUT_MAPPING");
     if(!outputName.empty()) {
         outputMapping=OpenFileMappingW(FILE_MAP_WRITE,FALSE,outputName.c_str());
@@ -250,11 +341,12 @@ extern "C" __declspec(dllexport) DWORD WINAPI Initialize(void*) {
 #define INSTALL(slot, saved, replacement) saved = original<decltype(saved)>(slot); if (!patch(slot, reinterpret_cast<void*>(replacement))) return 0
     INSTALL(0x9128c, realClass, getClass); INSTALL(0x91298, realEnum, enumInterfaces);
     INSTALL(0x91294, realDetail, getDetail); INSTALL(0x91290, realDestroy, destroySet);
+    INSTALL(0x91130, realProfileString, profileString);
     INSTALL(0x91148, realCreate, createFile); INSTALL(0x91140, realClose, closeHandle);
     INSTALL(0x91070, realAttributes, attributes); INSTALL(0x91074, realPreparsed, preparsed);
     INSTALL(0x91068, realCaps, caps); INSTALL(0x911b8, realRead, readFile); INSTALL(0x911b4, realWrite, writeFile);
     if(env(L"DRG_NATIVE_UNITY")==L"1") { INSTALL(0x91188,realProcess,createProcess); }
-    log("IO compatibility initialized; original ready/state instructions unchanged; MkII only");
+    log("IO compatibility initialized; guarded in-memory Shell compatibility patches active; MkII only");
     HANDLE thread = CreateThread(nullptr, 0, observe, nullptr, 0, nullptr);
     if (!thread) return 0; CloseHandle(thread); return 1;
 }
