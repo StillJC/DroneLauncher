@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -10,7 +10,7 @@
     <Compile Include="..\DroneRacingGenesisLoader\ControlsForm.cs" Link="ControlsForm.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\ControlTestForm.cs" Link="ControlTestForm.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\OutputManager.cs" Link="OutputManager.cs" />
-    <Compile Include="..\DroneRacingGenesisLoader\DisplayManager.cs" Link="DisplayManager.cs" />
+    <Compile Include="..\DroneRacingGenesisLoader\WindowPlacementManager.cs" Link="WindowPlacementManager.cs" />
     <ProjectReference Include="..\DroneRacingGenesis.Plugin\DroneRacingGenesis.Plugin.csproj" />
     <Compile Include="..\DroneRacingGenesisLoader\Installation.cs" Link="Installation.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\RuntimeConfiguration.cs" Link="RuntimeConfiguration.cs" />
@@ -18,6 +18,7 @@
     <Compile Include="..\DroneRacingGenesisLoader\ShellStartupArguments.cs" Link="ShellStartupArguments.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\PhysicalInputManager.cs" Link="PhysicalInputManager.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\ProcessMonitor.cs" Link="ProcessMonitor.cs" />
+	<Compile Include="..\DroneRacingGenesisLoader\OutputMonitorServer.cs" Link="OutputMonitorServer.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\Diagnostics.cs" Link="Diagnostics.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\IOCompatibility.cs" Link="IOCompatibility.cs" />
     <Compile Include="..\DroneRacingGenesisLoader\UnityPortability.cs" Link="UnityPortability.cs" />

@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 
@@ -6,7 +6,7 @@ namespace DroneRacingGenesisLoader;
 
 internal static class ProcessMonitor
 {
-    public static async Task LaunchAndMonitorAsync(Installation installation, LoaderLog log, Action<string> status, Action<PhysicalInputManager?>? brokerAvailable = null, CancellationToken shutdown = default)
+    public static async Task LaunchAndMonitorAsync(Installation installation, LoaderLog log, Action<string> status, Action<PhysicalInputManager?>? brokerAvailable = null, CancellationToken shutdown = default, string? targetDisplayDevice = null)
     {
         var shellPath = Path.Combine(installation.ShellRoot, "Shell.exe");
         var gamePath = Path.GetFullPath(Path.Combine(installation.GameRoot, "DroneRacing.exe"));
@@ -28,7 +28,8 @@ internal static class ProcessMonitor
         startInfo.Environment["DRG_OUTPUT_MAPPING"] = outputs.MappingName;
         brokerAvailable?.Invoke(inputs);
         UnityPortability.Configure(installation, startInfo, log);
-        var display = new DisplayManager(installation, startInfo, log);
+
+        var placement = new WindowPlacementManager(targetDisplayDevice, log);
         if (inputs is not null) startInfo.Environment["DRG_IO_MAPPING"] = inputs.MappingName;
         using var shell = (inputs is null ? Process.Start(startInfo) : await IOCompatibility.StartAsync(installation, startInfo, log).ConfigureAwait(false))
             ?? throw new InvalidOperationException("Windows did not create the Shell process.");
@@ -48,15 +49,14 @@ internal static class ProcessMonitor
         var nextCloseAttempt = DateTimeOffset.MinValue;
         bool nativeErrorReported = false;
         string? launchFailure = null;
-        string? displayWarning = null;
+
         try
         {
             while (true)
             {
                 int shellState = ReadShellState(installation, shell.Id);
-                display.Update(inputs?.GamePid??0,shell.HasExited?0:shell.Id);
-                if(display.Warning is not null && display.Warning != displayWarning)
-                { displayWarning=display.Warning; status(displayWarning); }
+
+                placement.Update(inputs?.GamePid??0,shell.HasExited?0:shell.Id);
                 if (!nativeErrorReported && NativeLaunchError(installation, shell.Id, started.UtcDateTime) is string nativeError)
                 {
                     nativeErrorReported = true;
@@ -64,12 +64,26 @@ internal static class ProcessMonitor
                     launchFailure = nativeError;
                     log.Write(nativeError); status(nativeError); stopping = DateTimeOffset.Now;
                 }
-                if ((shutdown.IsCancellationRequested || shell.HasExited) && stopping is null)
+                if (shutdown.IsCancellationRequested)
                 {
                     outputs.SessionClosing();
-                    stopping = DateTimeOffset.Now;
-                    log.Write(shutdown.IsCancellationRequested ? "Orderly shutdown requested through TEST, then window close." : "Shell exited unexpectedly; closing any owned game.");
-                    if (!shell.HasExited && shellState != 34) inputs?.RequestOperatorMenu();
+                    log.Write("Immediate launcher shutdown requested; terminating owned process tree.");
+
+                    foreach (var entry in games.Values)
+                    if (!entry.Process.HasExited)
+                    entry.Process.Kill(entireProcessTree:true);
+
+                    if (!shell.HasExited)
+                    shell.Kill(entireProcessTree:true);
+
+                    break;
+            }
+
+            if (shell.HasExited && stopping is null)
+            {
+                outputs.SessionClosing();
+                stopping = DateTimeOffset.Now;
+                log.Write("Shell exited unexpectedly; closing any owned game.");
                 }
                 if (stopping is not null)
                 {
@@ -138,7 +152,7 @@ internal static class ProcessMonitor
                         Diagnostics.Update(installation, "Game observed", game: candidate.Id);
                         log.Write($"Game PID={candidate.Id}; exact child arguments/cwd are in the native IO log.");
                         status($"Game running (PID {candidate.Id})");
-                        if(display.Warning is not null)status(display.Warning);
+
                     }
                     catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception or ArgumentException)
                     {

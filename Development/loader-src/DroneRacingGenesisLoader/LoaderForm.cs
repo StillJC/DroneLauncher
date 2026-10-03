@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing;
 
 namespace DroneRacingGenesisLoader;
@@ -34,10 +34,10 @@ internal sealed class LoaderForm : Form
         this.installation = installation;
         this.log = log;
         Text = "Drone Launcher";
-        LauncherStyle.Apply(this);ClientSize=new Size(600,640);MinimumSize=new Size(540,640);StartPosition=FormStartPosition.CenterScreen;
-        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(22),ColumnCount=2,RowCount=10};
+        LauncherStyle.Apply(this);ClientSize=new Size(600,513);MinimumSize=new Size(540,513);StartPosition=FormStartPosition.CenterScreen;
+        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new Padding(22),ColumnCount=2,RowCount=8};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-        foreach(int height in new[]{155,58,30,52,30,52,52,52,65,48})layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
+        foreach(int height in new[]{155,58,30,52,30,52,65,48})layout.RowStyles.Add(new RowStyle(SizeType.Absolute,height));
         var logo=new PictureBox{Image=LauncherStyle.Logo(),SizeMode=PictureBoxSizeMode.Zoom,Dock=DockStyle.Fill,Margin=new Padding(10)};
         layout.Controls.Add(logo,0,0);layout.SetColumnSpan(logo,2);
         launchButton=LauncherStyle.Button("LAUNCH GAME",async (_,_)=>await LaunchAsync());launchButton.BackColor=LauncherStyle.Accent;launchButton.ForeColor=Color.FromArgb(10,25,36);launchButton.Font=new Font(Font,FontStyle.Bold);launchButton.Enabled=missing.Count==0;
@@ -47,16 +47,12 @@ internal sealed class LoaderForm : Form
         layout.Controls.Add(LauncherStyle.Button("Configure Controls",(_,_)=>OpenConfiguration()),0,3);
         layout.Controls.Add(LauncherStyle.Button("Test Controls",(_,_)=>TestControls()),1,3);
         Heading("SYSTEM",4);
-        layout.Controls.Add(LauncherStyle.Button("Operator / Test Menu",(_,_)=>RequestOperator()),0,5);
-        layout.Controls.Add(LauncherStyle.Button("Audio Settings",(_,_)=>{MessageBox.Show(this,"Open SOUND SETTINGS in the original operator menu. Service chooses; Test selects. Your audio settings are retained.","Audio Settings");RequestOperator();}),1,5);
-        layout.Controls.Add(LauncherStyle.Button("Display / Graphics",(_,_)=>ShowFeatureStatus("Display / Graphics")),0,6);
-        layout.Controls.Add(LauncherStyle.Button("Network / LAN",(_,_)=>ShowFeatureStatus("Network / LAN")),1,6);
-        layout.Controls.Add(LauncherStyle.Button("Outputs",(_,_)=>ShowFeatureStatus("Outputs")),0,7);
-        layout.Controls.Add(LauncherStyle.Button("Diagnostics",(_,_)=>ShowDiagnostics()),1,7);
+        layout.Controls.Add(LauncherStyle.Button("Network / LAN",(_,_)=>ShowFeatureStatus("Network / LAN")),0,5);
+        layout.Controls.Add(LauncherStyle.Button("Outputs",(_,_)=>ShowFeatureStatus("Outputs")),1,5);
         statusLabel=new Label{Text=missing.Count==0?"Ready":"Runtime incomplete",Dock=DockStyle.Fill,Padding=new Padding(6,18,0,0),Font=new Font(Font,FontStyle.Bold)};
-        layout.Controls.Add(statusLabel,0,8);layout.SetColumnSpan(statusLabel,2);
-        layout.Controls.Add(LauncherStyle.Button("Open Logs",(_,_)=>Process.Start(new ProcessStartInfo(installation.LogsRoot){UseShellExecute=true})),0,9);
-        layout.Controls.Add(LauncherStyle.Button("Exit",(_,_)=>RequestExit()),1,9);
+        layout.Controls.Add(statusLabel,0,6);layout.SetColumnSpan(statusLabel,2);
+        layout.Controls.Add(LauncherStyle.Button("Open Logs",(_,_)=>Process.Start(new ProcessStartInfo(installation.LogsRoot){UseShellExecute=true})),0,7);
+        layout.Controls.Add(LauncherStyle.Button("Exit",(_,_)=>RequestExit()),1,7);
         Controls.Add(layout);
         uiTimer.Tick+=(_,_)=>CheckExit();uiTimer.Start();
         Shown+=(_,_)=>ResetIdleBroker();
@@ -91,6 +87,9 @@ internal sealed class LoaderForm : Form
             MessageBox.Show(this, "Missing:\n- " + string.Join("\n- ", missing), "Missing files", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
+        Screen launchScreen = Screen.FromControl(this);
+        string launchDisplayDevice = launchScreen.DeviceName;
+        log.Write($"Launch requested from monitor={launchDisplayDevice}; bounds={launchScreen.Bounds}.");
         idleBroker?.Dispose();idleBroker=null;
         shutdown = new CancellationTokenSource();
         running = true;
@@ -109,7 +108,7 @@ internal sealed class LoaderForm : Form
             await ProcessMonitor.LaunchAndMonitorAsync(installation, log, message =>
             {
                 if (!IsDisposed) BeginInvoke(() => statusLabel.Text = FriendlyStatus(message));
-            }, broker => inputBroker = broker, shutdown.Token);
+            }, broker => inputBroker = broker, shutdown.Token, launchDisplayDevice);
         }
         catch (Exception exception)
         {
@@ -179,19 +178,14 @@ internal sealed class LoaderForm : Form
         catch(Exception e){log.Error(e);MessageBox.Show(this,"Exit preferences could not be read or saved. Close the window to use normal shutdown.\n"+e.Message,"Exit settings");}
         finally{exitDialogOpen=false;if(broker is not null)broker.SuppressExit=false;}
     }
-    private void ShowDiagnostics()
-    {
-        using var dialog=new Form{Text="Drone Launcher — Diagnostics",ClientSize=new Size(780,460),StartPosition=FormStartPosition.CenterParent};
-        dialog.Controls.Add(new TextBox{Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Both,Dock=DockStyle.Fill,Text="Drone Launcher 1.1\r\nInstallation: "+installation.ContentRoot+"\r\nLog: "+log.FilePath+"\r\n\r\n"+File.ReadAllText(log.FilePath)});dialog.ShowDialog(this);
-    }
     private void ShowFeatureStatus(string feature)
     {
-        try{switch(feature){case "Display / Graphics":FeatureSettings.Display(this,installation,running);break;case "Network / LAN":FeatureSettings.Network(this,installation,running);break;case "Outputs":FeatureSettings.Outputs(this,installation,running);break;}}
+        try{switch(feature){case "Network / LAN":FeatureSettings.Network(this,installation,running);break;case "Outputs":FeatureSettings.Outputs(this,installation,running);break;}}
         catch(Exception e){log.Error(e);MessageBox.Show(this,"Settings could not be opened. Check the configuration file in Diagnostics.\n"+e.Message,feature);}
     }
     private static string FriendlyStatus(string message)
     {
-        if(message.StartsWith("Selected monitor")||message.StartsWith("Display settings"))return message;
+
         if(message.StartsWith("Game running"))return "Game Running";
         if(message.StartsWith("Shell running"))return "Starting Shell...";
         if(message.StartsWith("Operator menu")||message.Contains("operator flow"))return "Operator Menu";
@@ -200,16 +194,4 @@ internal sealed class LoaderForm : Form
         return "Error — see diagnostics";
     }
 
-    private void RequestOperator()
-    {
-        if (inputBroker is null) { statusLabel.Text = "Launch Game first, then open the operator menu."; return; }
-        if (ProcessMonitor.ReadShellState(installation, inputBroker.ShellPid) == 34)
-        {
-            ProcessMonitor.FocusOperatorWindow(inputBroker.ShellPid);
-            statusLabel.Text = "Operator menu: Service chooses; Test selects";
-            return;
-        }
-        inputBroker.RequestOperatorMenu();
-        statusLabel.Text = "TEST requested; waiting for Shell's original operator flow.";
-    }
 }

@@ -135,24 +135,24 @@ try
     rejected=false;try{PhysicalInputManager.ValidateExit(new ControlBinding{Kind="xinputAxis",Device="0",Control="LeftX"});}catch(InvalidDataException){rejected=true;}
     Assert(rejected,"exit rejects axes");
     PhysicalInputManager.ValidateExit(new ControlBinding{Kind="xinputButton",Device="0",Control="RightThumb"});
-    File.WriteAllText(Path.Combine(installation.ConfigRoot,"graphics.json"),"{\"Enabled\":true,\"Width\":-1}");
-    var startInfo=new System.Diagnostics.ProcessStartInfo();startInfo.Environment["DRG_GRAPHICS"]="1";
-    var display=new DisplayManager(installation,startInfo,log);
-    Assert(display.Warning is not null&&!startInfo.Environment.ContainsKey("DRG_GRAPHICS"),"invalid graphics falls back and clears inherited override");
-    var primary=System.Windows.Forms.Screen.PrimaryScreen!;
-    File.WriteAllText(Path.Combine(installation.ConfigRoot,"graphics.json"),JsonSerializer.Serialize(new GraphicsConfiguration{Enabled=true,Monitor="missing-monitor-for-acceptance",Width=primary.Bounds.Width,Height=primary.Bounds.Height,Mode="Windowed"}));
-    startInfo=new System.Diagnostics.ProcessStartInfo();display=new DisplayManager(installation,startInfo,log);
-    Assert(display.Warning?.StartsWith("Selected monitor unavailable")==true&&startInfo.Environment.ContainsKey("DRG_GRAPHICS"),"missing display selects primary with nonfatal warning");
+
     rejected=false;try{PhysicalInputManager.Validate(new ControlBinding{Kind="xinputButton",Device="7",Control="A"});}catch(InvalidDataException){rejected=true;}
     Assert(rejected,"invalid controller index rejected before sampling or process launch");
-    var listener=new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback,0);listener.Start();
-    try
-    {
-        int port=((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-        File.WriteAllText(Path.Combine(installation.ConfigRoot,"outputs.json"),JsonSerializer.Serialize(new OutputConfiguration{TcpEnabled=true,Port=port}));
+    var portProbe=new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback,0);
+    portProbe.Start();
+    int port=((System.Net.IPEndPoint)portProbe.LocalEndpoint).Port;
+    portProbe.Stop();
+
+    File.WriteAllText(
+        Path.Combine(installation.ConfigRoot,"outputs.json"),
+        JsonSerializer.Serialize(new OutputConfiguration{TcpEnabled=true,Port=port}));
+
         using var outputs=new OutputManager(installation,log){ShellPid=123};
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        using var receiver=await listener.AcceptTcpClientAsync(timeout.Token);
+
+        using var receiver=new System.Net.Sockets.TcpClient();
+        await receiver.ConnectAsync(System.Net.IPAddress.Loopback,port,timeout.Token);
+
         using var reader=new StreamReader(receiver.GetStream());
         using var outputMap=System.IO.MemoryMappedFiles.MemoryMappedFile.OpenExisting(outputs.MappingName);
         using var writer=outputMap.CreateViewAccessor();writer.Write(4,123u);writer.Write(12,unchecked((uint)Environment.TickCount));
@@ -162,8 +162,7 @@ try
         outputs.SessionClosing();
         bool off=false;while(!off){string line=await reader.ReadLineAsync(timeout.Token)??throw new Exception("Output stream closed");using var message=JsonDocument.Parse(line);off=message.RootElement.GetProperty("output").GetString()=="vibration"&&message.RootElement.GetProperty("value").GetInt32()==0;}
         Assert(off,"session shutdown resets logical vibration");
-    }
-    finally{listener.Stop();}
+
     PhysicalInputManager.Validate(new ControlBinding{Kind="joystickButton",Device="1",Control="PovLeft"});
     Assert(PhysicalInputManager.PovValue(0xffff,"PovUp")==0 && PhysicalInputManager.PovValue(uint.MaxValue,"PovUp")==0,"centered joystick hat releases");
     Assert(PhysicalInputManager.PovValue(31500,"PovUp")==1 && PhysicalInputManager.PovValue(31500,"PovLeft")==1 && PhysicalInputManager.PovValue(31500,"PovRight")==0,"joystick hat diagonal and wraparound");
@@ -185,8 +184,8 @@ try
     editorThread.SetApartmentState(ApartmentState.STA);editorThread.Start();editorThread.Join();
     if(editorFailure is not null)throw new Exception("Controls editor preservation failed",editorFailure);
     Console.WriteLine("PASS: controls editor preserves custom/hidden/alias bindings without changes");
-    Console.WriteLine("PASS: LAN operator preservation, single-button exit validation, invalid graphics fallback, bounded native-output-ring to TCP and session reset");
-    Console.WriteLine("PASS: roots, spaces, preflight, preservation, mapper, controls, checksum/build rejection, analog transforms, stale-PID error isolation, diagnostics sharing recovery");
+    Console.WriteLine("PASS: LAN operator preservation, single-button exit validation, bounded native-output-ring to TCP and session reset");
+    Console.WriteLine("PASS: roots, spaces, preflight, preservation, mapper, controls, Shell checksum contract, analog transforms, stale-PID error isolation, diagnostics sharing recovery");
 }
 finally
 {
